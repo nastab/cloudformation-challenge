@@ -1,18 +1,7 @@
 # CLOUDFORMATION-CHALLENGE
 <hr>
 
-  <svg xmlns="http://www.w3.org/2000/svg" width="600" height="180" viewBox="0 0 600 180">
-    <!-- Texto "aws" -->
-    <text x="20" y="100" font-family="Arial, sans-serif" font-size="80" fill="black">aws</text>
-    
-    <!-- Swoosh (curva naranja de Amazon) -->
-    <path d="M 20 120 Q 80 170 180 130 Q 170 140 160 150" fill="none" stroke="#FF9900" stroke-width="10" />
-
-    <!-- Texto "CLOUD FORMATION CHALLENGE" -->
-    <text x="220" y="50" font-family="Arial, sans-serif" font-size="30" fill="black">CLOUD</text>
-    <text x="220" y="90" font-family="Arial, sans-serif" font-size="30" fill="black">FORMATION</text>
-    <text x="220" y="130" font-family="Arial, sans-serif" font-size="30" fill="black">CHALLENGE</text>
-  </svg>
+![Diagram](./arquitecture/images/main-title2.svg)
 <p>
 Deploying features by environments is a common feature when starting with an application. It is required to deploy a web application in two environments DEV and PDN. To do this, it is necessary to deploy the application in two EC2 instances together with two ALBs and in the case of PDN, it is required to work with an auto scaling group. </p> 
 
