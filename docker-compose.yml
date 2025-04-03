@@ -45,10 +45,6 @@ services:
   frontend: #name file-app 
     container_name: frontend-fileserver
     image: gporras/file-server-app-frontend:latest
-    build:
-      context: file-app
-      args:
-        PROFILE: prod
     hostname: frontend-fileserver
     ports:
       - "4200:80"
