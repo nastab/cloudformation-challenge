@@ -53,7 +53,7 @@ The architecture deployed in AWS is located within the VPC LDC-AUTH-VPC, located
 2. Any web browser..
 
 ## Get started
-Use the command <font color="green"> docker-compose up </font>. then both projects run at the same time; the backend is a java app, and the second one is an Angular app after a few minutes you could test all applications.
+Use the command <font color="green"> docker compose up -d </font>. then both projects run at the same time; the backend is a java app, and the second one is an Angular app after a few minutes you could test all applications.
 
 ### Front-end 
 1. First, go into the web browser and put this URL http://localhost:4200; you will see the main dashboard.
