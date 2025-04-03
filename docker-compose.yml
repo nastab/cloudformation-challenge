@@ -24,7 +24,7 @@ services:
       - file-server-net
   backend: #name backend service spring boot app
     container_name: backend
-    build: ./FileserverBack
+    image: gporras/file-server-app-backend:latest 
     hostname: backend
     ports:
       - "8080:8080"
@@ -44,6 +44,7 @@ services:
       - mongo_db
   frontend: #name file-app 
     container_name: frontend-fileserver
+    image: gporras/file-server-app-frontend:latest
     build:
       context: file-app
       args:
