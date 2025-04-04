@@ -13,38 +13,28 @@ The architecture deployed in AWS is located within the VPC LDC-AUTH-VPC, located
 
 
 ## CHALLENGE REQUIREMENTS
-1. Create a VPC associated with the AUTHORIZATION LDC named LDC-AUTH-VPC
-2. Create two t2.micro EC2 instances in a private network named LDC-AUTH_EC2_(USER-NETWORK)-PDN/DEV
+1. Create a VPC associated with the AUTHORIZATION LDC named LDC-AUTH-VPC 
+2. Create two t2.micro EC2 instances in a private network named LDC-AUTH_EC2_(USER-NETWORK)-PDN/DEV. 
+3. Deploy the base project to the instances. 
+4. Create two ALBs, one connected per environment. 
+- LDC-AUTH-ALB-(USER-NETWORK)-DEV 
+- LDC-AUTH-ALB-(USER-NETWORK)-PDN 
+5. Create 1 ASG for the instance in the PDN environment 
+- LDC-AUTH-ASG-(USER-NETWORK)-PDN 
+6. 1 security group must be created per environment. 
+- LDC-AUTH-SG-(USER-NETWORK)-PDN 
+- LDC-AUTH-SG-(USER-NETWORK)-DEV 
+7. The project must use nested stacks, at least in the security group; however, it can also use them in other features, such as the load balancer. 
+8. The network user name and maximum number of instances in the ASG must be parameters within the template. 
+9. Maps must be used for the availability zone and region. 
+10. Upon completion, the following outputs should be delivered: 
+- Network user name 
+- Load balancer names 
+- Security group names 
+- Instance names 
+11. Create a local branch feature/git-user 
+12. Delivery date: June 25th / Checkpoint: May 28th / June 11th
 
-3. Deploy the base project to the instances.
-
-4. Create two ALBs connected to a single instance:
-
-- LDC-AUTH-ALB-(USER-NETWORK)-DEV
-
-- LDC-AUTH-ALB-(USER-NETWORK)-PDN
-
-5. Create 1 ASG for the instance in the PDN environment
-- LDC-AUTH-ASG-(USER-NETWORK)-PDN
-
-6. 1 security group must be created per instance
-- LDC-AUTH-SG-(USER-NETWORK)-PDN
-- LDC-AUTH-SG-(USER-NETWORK)-DEV
-
-7. The project must use nested stacks, at least in the security group; however, it can also use them in other features, such as the load balancer.
-8. The network user name and maximum number of instances in the ASG must be a parameter within the template; Maps must be used for the availability zone and region.
-
-9. Upon completion, the following output should be delivered:
-
-- Network user name
-
-- Load balancer name
-
-- Security group name
-
-- Instance name
-
-10. Create a local feature/user-git branch
 
 ## DEPLOY-LOCAL
 
