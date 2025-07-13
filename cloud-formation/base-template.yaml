@@ -65,7 +65,7 @@ Resources:
               content: |
                 #!/bin/bash
                 cd /home/ubuntu
-                git clone https://github.com/lectrapb/cloudformation-challenge.git app
+                git clone https://github.com/nastab/cloudformation-challenge.git app
                 cd app
                 docker-compose up -d
               mode: '000755'
