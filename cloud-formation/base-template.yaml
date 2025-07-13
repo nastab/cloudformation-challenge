@@ -2,8 +2,9 @@ Parameters:
   InstanceType:
     Description: WebServer EC2 instance type (has default, AllowedValues)
     Type: String
-    Default: t3.micro
+    Default: t2.micro
     AllowedValues:
+      - t2.micro
       - t3.micro
     ConstraintDescription: must be a valid EC2 instance type.
 
@@ -23,6 +24,7 @@ Parameters:
   NetworkUsername:
     Description: Network username
     Type: String
+    Default: NTABORD
 
   env:
     Description: Environment
@@ -34,6 +36,12 @@ Parameters:
     Type: String
     Default: https://cf-templates-ixehohauydzv-us-east-1.s3.us-east-1.amazonaws.com/sg-template.yaml
 
+  Subnets:
+    Type: List<AWS::EC2::Subnet::Id>
+
+Conditions:
+  IsPDN: !Equals [!Ref env, "PDN"]
+  IsDEV: !Equals [!Ref env, "DEV"]
 
 Resources:
 
@@ -46,8 +54,82 @@ Resources:
         VPCId: !Ref MyVPC
       TimeoutInMinutes: 5
 
+  MyALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub "LDC-AUTH-ALB-${NetworkUsername}-${env}"
+      Subnets: !Ref Subnets
+      SecurityGroups: 
+        - !GetAtt ServerSecurityGroupStack.Outputs.SSHGroupId
+      Scheme: internet-facing
+      Type: application
+
+  TargetGroupPDN:
+    Condition: IsPDN
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref MyVPC
+      Port: 80
+      Protocol: HTTP
+      TargetType: instance
+      HealthCheckPath: /
+      Matcher:
+        HttpCode: 200
+
+  TargetGroupDEV:
+    Condition: IsDEV
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref MyVPC
+      Port: 80
+      Protocol: HTTP
+      TargetType: instance
+      Targets:
+        - Id: !Ref MyEC2Instance
+      HealthCheckPath: /
+      Matcher:
+        HttpCode: 200
+
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref MyALB
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !If
+            - IsPDN
+            - !Ref TargetGroupPDN
+            - !Ref TargetGroupDEV
+
+  LaunchTemplate:
+    Condition: IsPDN
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        InstanceType: !Ref InstanceType
+        ImageId: ami-0a7d80731ae1b2435
+        SecurityGroupIds: 
+          - !GetAtt ServerSecurityGroupStack.Outputs.SSHGroupId
+
+  AutoScalingGroup:
+    Condition: IsPDN
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier: !Ref Subnets
+      MinSize: "1"
+      MaxSize: "1"
+      DesiredCapacity: "1"
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      TargetGroupARNs:
+        - !Ref TargetGroupPDN
+
   MyEC2Instance:
     Type: AWS::EC2::Instance
+    Condition: IsDEV
     Properties:
       InstanceType: !Ref InstanceType
       KeyName: !Ref KeyName
