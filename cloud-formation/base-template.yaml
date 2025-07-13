@@ -32,6 +32,7 @@ Parameters:
   TemplateURL:
     Description: URL of the nested stack template
     Type: String
+    Default: https://cf-templates-ixehohauydzv-us-east-1.s3.us-east-1.amazonaws.com/sg-template.yaml
 
 
 Resources:
@@ -47,57 +48,44 @@ Resources:
 
   MyEC2Instance:
     Type: AWS::EC2::Instance
-    Metadata:
-      AWS::CloudFormation::Init:
-        config:
-          packages:
-            apt:
-              git: []
-              docker.io: []
-              docker-compose: []
-          services:
-            sysvinit:
-              docker:
-                enabled: true
-                ensureRunning: true
-          files:
-            "/home/ubuntu/run-compose.sh":
-              content: |
-                #!/bin/bash
-                cd /home/ubuntu
-                git clone https://github.com/nastab/cloudformation-challenge.git app
-                cd app
-                docker-compose up -d
-              mode: '000755'
-              owner: ubuntu
-              group: ubuntu
     Properties:
-      #we reference the InstanceType parameter
       InstanceType: !Ref InstanceType
       KeyName: !Ref KeyName
       ImageId: ami-0a7d80731ae1b2435
-      # here we reference an internal CloudFormation resource
-      BlockDeviceMappings: 
+      BlockDeviceMappings:
         - DeviceName: "/dev/sda1"
-          Ebs: 
+          Ebs:
             VolumeType: "gp2"
             VolumeSize: "20"
-      NetworkInterfaces: 
+      NetworkInterfaces:
         - AssociatePublicIpAddress: "true"
           DeviceIndex: "0"
           GroupSet:
             - !GetAtt ServerSecurityGroupStack.Outputs.SSHGroupId
-          SubnetId: 
-            Ref: "MySubnetID"
+          SubnetId: !Ref MySubnetID
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -xe
+          exec > /var/log/user-data.log 2>&1
+          echo "=== INICIANDO SCRIPT DE USUARIO ==="
+          # Actualiza el sistema
+          apt-get update -y
+          apt-get upgrade -y
+          # Instala Docker correctamente
+          curl -fsSL https://get.docker.com/ -o get-docker.sh
+          sh get-docker.sh
+
+          # Agrega el usuario ubuntu al grupo docker
+          usermod -aG docker ubuntu
+          # Prueba simple para verificar que Docker está disponible
+          docker --version || echo "Docker no se instaló correctamente"
+
+          apt-get install -y git
+          cd /home/ubuntu
+          git clone https://github.com/nastab/cloudformation-challenge.git
+          cd cloudformation-challenge
+          docker compose up -d
+          echo "=== FIN DEL SCRIPT DE USUARIO ==="
       Tags:
         - Key: Name
           Value: !Sub "AUTH-EC2-NET-${NetworkUsername}-${env}"
-      UserData:
-        Fn::Base64: !Sub |
-            #!/bin/bash
-            set -e
-            apt-get update -y
-            apt-get install -y python3-pip
-            pip3 install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
-            /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource MyEC2Instance --region ${AWS::Region}
-            /home/ubuntu/run-compose.sh
