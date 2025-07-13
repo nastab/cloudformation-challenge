@@ -1,0 +1,103 @@
+Parameters:
+  InstanceType:
+    Description: WebServer EC2 instance type (has default, AllowedValues)
+    Type: String
+    Default: t3.micro
+    AllowedValues:
+      - t3.micro
+    ConstraintDescription: must be a valid EC2 instance type.
+
+  KeyName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instances. Linked to AWS Parameter
+    Type: AWS::EC2::KeyPair::KeyName
+    ConstraintDescription: must be the name of an existing EC2 KeyPair.
+
+  MyVPC:
+    Description: VPC to operate in
+    Type: AWS::EC2::VPC::Id
+
+  MySubnetID:
+    Description: Subnet IDs that is a List of Subnet Id
+    Type: "AWS::EC2::Subnet::Id"
+
+  NetworkUsername:
+    Description: Network username
+    Type: String
+
+  env:
+    Description: Environment
+    Type: String
+    AllowedValues: [DEV, PDN]
+
+  TemplateURL:
+    Description: URL of the nested stack template
+    Type: String
+
+
+Resources:
+
+  ServerSecurityGroupStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Ref TemplateURL
+      Parameters:
+        ApplicationName: !Ref AWS::StackName
+        VPCId: !Ref MyVPC
+      TimeoutInMinutes: 5
+
+  MyEC2Instance:
+    Type: AWS::EC2::Instance
+    Metadata:
+      AWS::CloudFormation::Init:
+        config:
+          packages:
+            apt:
+              git: []
+              docker.io: []
+              docker-compose: []
+          services:
+            sysvinit:
+              docker:
+                enabled: true
+                ensureRunning: true
+          files:
+            "/home/ubuntu/run-compose.sh":
+              content: |
+                #!/bin/bash
+                cd /home/ubuntu
+                git clone https://github.com/lectrapb/cloudformation-challenge.git app
+                cd app
+                docker-compose up -d
+              mode: '000755'
+              owner: ubuntu
+              group: ubuntu
+    Properties:
+      #we reference the InstanceType parameter
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyName
+      ImageId: ami-0a7d80731ae1b2435
+      # here we reference an internal CloudFormation resource
+      BlockDeviceMappings: 
+        - DeviceName: "/dev/sda1"
+          Ebs: 
+            VolumeType: "gp2"
+            VolumeSize: "20"
+      NetworkInterfaces: 
+        - AssociatePublicIpAddress: "true"
+          DeviceIndex: "0"
+          GroupSet:
+            - !GetAtt ServerSecurityGroupStack.Outputs.SSHGroupId
+          SubnetId: 
+            Ref: "MySubnetID"
+      Tags:
+        - Key: Name
+          Value: !Sub "AUTH-EC2-NET-${NetworkUsername}-${env}"
+      UserData:
+        Fn::Base64: !Sub |
+            #!/bin/bash
+            set -e
+            apt-get update -y
+            apt-get install -y python3-pip
+            pip3 install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
+            /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource MyEC2Instance --region ${AWS::Region}
+            /home/ubuntu/run-compose.sh
