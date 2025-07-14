@@ -17,10 +17,6 @@ Parameters:
     Description: VPC to operate in
     Type: AWS::EC2::VPC::Id
 
-  MySubnetID:
-    Description: Subnet IDs that is a List of Subnet Id
-    Type: "AWS::EC2::Subnet::Id"
-
   NetworkUsername:
     Description: Network username
     Type: String
@@ -35,6 +31,14 @@ Parameters:
     Description: URL of the nested stack template
     Type: String
     Default: https://cf-templates-ixehohauydzv-us-east-1.s3.us-east-1.amazonaws.com/sg-template.yaml
+
+  MyInternetGateway:
+    Description: ID de un Internet Gateway existente (ya adjunto a la VPC)
+    Type: String
+
+  MySubnetID:
+    Description: Subnet ID
+    Type: AWS::EC2::Subnet::Id
 
   Subnets:
     Type: List<AWS::EC2::Subnet::Id>
@@ -54,6 +58,27 @@ Resources:
         VPCId: !Ref MyVPC
       TimeoutInMinutes: 5
 
+  MyPublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MyVPC
+      Tags:
+        - Key: Name
+          Value: PublicRouteTable
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref MyPublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref MyInternetGateway
+
+  MySubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref MySubnetID
+      RouteTableId: !Ref MyPublicRouteTable
+
   MyALB:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
@@ -69,7 +94,7 @@ Resources:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
       VpcId: !Ref MyVPC
-      Port: 80
+      Port: 4200
       Protocol: HTTP
       TargetType: instance
       HealthCheckPath: /
@@ -81,7 +106,7 @@ Resources:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
       VpcId: !Ref MyVPC
-      Port: 80
+      Port: 4200
       Protocol: HTTP
       TargetType: instance
       Targets:
@@ -94,7 +119,7 @@ Resources:
     Type: AWS::ElasticLoadBalancingV2::Listener
     Properties:
       LoadBalancerArn: !Ref MyALB
-      Port: 80
+      Port: 4200
       Protocol: HTTP
       DefaultActions:
         - Type: forward
@@ -109,9 +134,42 @@ Resources:
     Properties:
       LaunchTemplateData:
         InstanceType: !Ref InstanceType
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: !Sub "AUTH-EC2-${NetworkUsername}-${env}"
         ImageId: ami-0a7d80731ae1b2435
-        SecurityGroupIds: 
-          - !GetAtt ServerSecurityGroupStack.Outputs.SSHGroupId
+        NetworkInterfaces: 
+        - AssociatePublicIpAddress: true
+          DeviceIndex: 0
+          SubnetId: 
+            Ref: MySubnetID
+          Groups:
+            - !GetAtt ServerSecurityGroupStack.Outputs.SSHGroupId
+        KeyName: !Ref KeyName
+        BlockDeviceMappings:
+          - DeviceName: "/dev/sda1"
+            Ebs:
+              VolumeType: "gp2"
+              VolumeSize: "20"
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash -xe
+            exec > /var/log/user-data.log 2>&1
+            echo "=== INICIANDO SCRIPT DE USUARIO ==="
+            apt-get update -y
+            apt-get upgrade -y
+            curl -fsSL https://get.docker.com/ -o get-docker.sh
+            sh get-docker.sh
+            usermod -aG docker ubuntu
+            docker --version || echo "Docker no se instaló correctamente"
+            git clone https://github.com/nastab/cloudformation-challenge.git
+            cd cloudformation-challenge/
+            PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
+            API_URL=http://$PUBLIC_IP:8080/api docker compose up -d
+            echo "=== FIN DEL SCRIPT DE USUARIO ==="
+
 
   AutoScalingGroup:
     Condition: IsPDN
@@ -125,7 +183,7 @@ Resources:
         LaunchTemplateId: !Ref LaunchTemplate
         Version: !GetAtt LaunchTemplate.LatestVersionNumber
       TargetGroupARNs:
-        - !Ref TargetGroupPDN
+        - !Ref TargetGroupPDN      
 
   MyEC2Instance:
     Type: AWS::EC2::Instance
@@ -139,35 +197,29 @@ Resources:
           Ebs:
             VolumeType: "gp2"
             VolumeSize: "20"
-      NetworkInterfaces:
-        - AssociatePublicIpAddress: "true"
-          DeviceIndex: "0"
-          GroupSet:
+      NetworkInterfaces: 
+        - AssociatePublicIpAddress: true
+          DeviceIndex: 0
+          GroupSet: 
             - !GetAtt ServerSecurityGroupStack.Outputs.SSHGroupId
-          SubnetId: !Ref MySubnetID
+          SubnetId: 
+            Ref: MySubnetID
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash -xe
-          exec > /var/log/user-data.log 2>&1
-          echo "=== INICIANDO SCRIPT DE USUARIO ==="
-          # Actualiza el sistema
-          apt-get update -y
-          apt-get upgrade -y
-          # Instala Docker correctamente
-          curl -fsSL https://get.docker.com/ -o get-docker.sh
-          sh get-docker.sh
-
-          # Agrega el usuario ubuntu al grupo docker
-          usermod -aG docker ubuntu
-          # Prueba simple para verificar que Docker está disponible
-          docker --version || echo "Docker no se instaló correctamente"
-
-          apt-get install -y git
-          cd /home/ubuntu
-          git clone https://github.com/nastab/cloudformation-challenge.git
-          cd cloudformation-challenge
-          docker compose up -d
-          echo "=== FIN DEL SCRIPT DE USUARIO ==="
+            exec > /var/log/user-data.log 2>&1
+            echo "=== INICIANDO SCRIPT DE USUARIO ==="
+            apt-get update -y
+            apt-get upgrade -y
+            curl -fsSL https://get.docker.com/ -o get-docker.sh
+            sh get-docker.sh
+            usermod -aG docker ubuntu
+            docker --version || echo "Docker no se instaló correctamente"
+            git clone https://github.com/nastab/cloudformation-challenge.git
+            cd cloudformation-challenge/
+            PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
+            API_URL=http://$PUBLIC_IP:8080/api docker compose up -d
+            echo "=== FIN DEL SCRIPT DE USUARIO ==="    
       Tags:
         - Key: Name
-          Value: !Sub "AUTH-EC2-NET-${NetworkUsername}-${env}"
+          Value: !Sub "AUTH-EC2-${NetworkUsername}-${env}"
