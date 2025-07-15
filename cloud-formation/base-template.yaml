@@ -1,3 +1,6 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Master stack for LDC-AUTH infrastructure using nested stacks
+
 Parameters:
   InstanceType:
     Description: WebServer EC2 instance type (has default, AllowedValues)
@@ -8,54 +11,49 @@ Parameters:
       - t3.micro
     ConstraintDescription: must be a valid EC2 instance type.
 
-  KeyName:
-    Description: Name of an existing EC2 KeyPair to enable SSH access to the instances. Linked to AWS Parameter
-    Type: AWS::EC2::KeyPair::KeyName
-    ConstraintDescription: must be the name of an existing EC2 KeyPair.
-
-  MyVPC:
-    Description: VPC to operate in
-    Type: AWS::EC2::VPC::Id
-
-  NetworkUsername:
+  NetworkUser:
     Description: Network username
     Type: String
     Default: NTABORD
 
-  env:
-    Description: Environment
-    Type: String
-    AllowedValues: [DEV, PDN]
-
   TemplateURL:
     Description: URL of the nested stack template
     Type: String
-    Default: https://cf-templates-ixehohauydzv-us-east-1.s3.us-east-1.amazonaws.com/sg-template.yaml
+    Default: https://ntabord-s3.s3.us-east-1.amazonaws.com/sg-template.yaml
+
+  MaxInstances:
+    Type: Number
+    Description: Maximum number of EC2 instances in the PDN ASG
+    Default: 2
+    MinValue: 1
+    MaxValue: 3
+
+  PrivateSubnetApdn:
+    Description: Subnet ID
+    Type: AWS::EC2::Subnet::Id
+  
+  PrivateSubnetBdev:
+    Description: Subnet ID
+    Type: AWS::EC2::Subnet::Id
+  
+  MyVPC:
+    Description: VPC to operate in
+    Type: AWS::EC2::VPC::Id
 
   MyInternetGateway:
     Description: ID de un Internet Gateway existente (ya adjunto a la VPC)
     Type: String
 
-  MySubnetID:
-    Description: Subnet ID
-    Type: AWS::EC2::Subnet::Id
-
-  Subnets:
-    Type: List<AWS::EC2::Subnet::Id>
-
-Conditions:
-  IsPDN: !Equals [!Ref env, "PDN"]
-  IsDEV: !Equals [!Ref env, "DEV"]
-
 Resources:
-
   ServerSecurityGroupStack:
     Type: AWS::CloudFormation::Stack
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
       TemplateURL: !Ref TemplateURL
       Parameters:
-        ApplicationName: !Ref AWS::StackName
         VPCId: !Ref MyVPC
+        NetworkUsername: !Ref NetworkUser
       TimeoutInMinutes: 5
 
   MyPublicRouteTable:
@@ -76,21 +74,40 @@ Resources:
   MySubnetRouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
-      SubnetId: !Ref MySubnetID
+      SubnetId: !Ref PrivateSubnetApdn
       RouteTableId: !Ref MyPublicRouteTable
 
-  MyALB:
+  MySubnetRouteTableAssociationDev:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetBdev
+      RouteTableId: !Ref MyPublicRouteTable
+
+  MyALBPDN:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
-      Name: !Sub "LDC-AUTH-ALB-${NetworkUsername}-${env}"
-      Subnets: !Ref Subnets
+      Name: !Sub LDC-AUTH-ALB-${NetworkUser}-PDN
+      Subnets:
+        - !Ref PrivateSubnetBdev
+        - !Ref PrivateSubnetApdn
       SecurityGroups: 
-        - !GetAtt ServerSecurityGroupStack.Outputs.SSHGroupId
+        - !GetAtt ServerSecurityGroupStack.Outputs.EC2GroupIdPDN
+      Scheme: internet-facing
+      Type: application
+
+  MyALBDEV:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub LDC-AUTH-ALB-${NetworkUser}-DEV
+      Subnets:
+        - !Ref PrivateSubnetBdev
+        - !Ref PrivateSubnetApdn
+      SecurityGroups: 
+        - !GetAtt ServerSecurityGroupStack.Outputs.EC2GroupIdDEV
       Scheme: internet-facing
       Type: application
 
   TargetGroupPDN:
-    Condition: IsPDN
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
       VpcId: !Ref MyVPC
@@ -102,7 +119,6 @@ Resources:
         HttpCode: 200
 
   TargetGroupDEV:
-    Condition: IsDEV
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
       VpcId: !Ref MyVPC
@@ -115,21 +131,29 @@ Resources:
       Matcher:
         HttpCode: 200
 
-  ALBListener:
+  ALBListenerDEV:
     Type: AWS::ElasticLoadBalancingV2::Listener
     Properties:
-      LoadBalancerArn: !Ref MyALB
-      Port: 4200
+      LoadBalancerArn: !Ref MyALBDEV
+      Port: 80
       Protocol: HTTP
       DefaultActions:
         - Type: forward
-          TargetGroupArn: !If
-            - IsPDN
-            - !Ref TargetGroupPDN
-            - !Ref TargetGroupDEV
+          TargetGroupArn: 
+            Ref: TargetGroupDEV
+            
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref MyALBPDN
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: 
+            Ref: TargetGroupPDN
 
   LaunchTemplate:
-    Condition: IsPDN
     Type: AWS::EC2::LaunchTemplate
     Properties:
       LaunchTemplateData:
@@ -138,23 +162,22 @@ Resources:
           - ResourceType: instance
             Tags:
               - Key: Name
-                Value: !Sub "AUTH-EC2-${NetworkUsername}-${env}"
+                Value: !Sub "AUTH-EC2-${NetworkUser}-PDN"
         ImageId: ami-0a7d80731ae1b2435
         NetworkInterfaces: 
         - AssociatePublicIpAddress: true
           DeviceIndex: 0
           SubnetId: 
-            Ref: MySubnetID
+            Ref: PrivateSubnetApdn
           Groups:
-            - !GetAtt ServerSecurityGroupStack.Outputs.SSHGroupId
-        KeyName: !Ref KeyName
+            - !GetAtt ServerSecurityGroupStack.Outputs.EC2GroupIdDEV
         BlockDeviceMappings:
           - DeviceName: "/dev/sda1"
             Ebs:
               VolumeType: "gp2"
               VolumeSize: "20"
         UserData:
-          Fn::Base64: !Sub |
+          Fn::Base64: |
             #!/bin/bash -xe
             exec > /var/log/user-data.log 2>&1
             echo "=== INICIANDO SCRIPT DE USUARIO ==="
@@ -172,25 +195,28 @@ Resources:
 
 
   AutoScalingGroup:
-    Condition: IsPDN
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
-      VPCZoneIdentifier: !Ref Subnets
+      AutoScalingGroupName: !Sub LDC-AUTH-ASG-${NetworkUser}-PDN
+      VPCZoneIdentifier: 
+        - !Ref PrivateSubnetApdn
       MinSize: "1"
-      MaxSize: "2"
-      DesiredCapacity: "1"
+      MaxSize: !Ref MaxInstances
+      DesiredCapacity: !Ref MaxInstances
       LaunchTemplate:
         LaunchTemplateId: !Ref LaunchTemplate
         Version: !GetAtt LaunchTemplate.LatestVersionNumber
       TargetGroupARNs:
-        - !Ref TargetGroupPDN      
+        - !Ref TargetGroupPDN
+      Tags:
+        - Key: Name
+          Value: !Sub LDC-AUTH-ASG-EC2-${NetworkUser}-PDN
+          PropagateAtLaunch: true
 
   MyEC2Instance:
     Type: AWS::EC2::Instance
-    Condition: IsDEV
     Properties:
       InstanceType: !Ref InstanceType
-      KeyName: !Ref KeyName
       ImageId: ami-0a7d80731ae1b2435
       BlockDeviceMappings:
         - DeviceName: "/dev/sda1"
@@ -201,11 +227,11 @@ Resources:
         - AssociatePublicIpAddress: true
           DeviceIndex: 0
           GroupSet: 
-            - !GetAtt ServerSecurityGroupStack.Outputs.SSHGroupId
+            - !GetAtt ServerSecurityGroupStack.Outputs.EC2GroupIdDEV
           SubnetId: 
-            Ref: MySubnetID
+            Ref: PrivateSubnetBdev
       UserData:
-        Fn::Base64: !Sub |
+        Fn::Base64: |
           #!/bin/bash -xe
             exec > /var/log/user-data.log 2>&1
             echo "=== INICIANDO SCRIPT DE USUARIO ==="
@@ -222,4 +248,33 @@ Resources:
             echo "=== FIN DEL SCRIPT DE USUARIO ==="    
       Tags:
         - Key: Name
-          Value: !Sub "AUTH-EC2-${NetworkUsername}-${env}"
+          Value: !Sub "AUTH-EC2-${NetworkUser}-DEV"
+
+Outputs:
+  NetworkUserName:
+    Value: !Ref NetworkUser
+    Description: The user-defined network name
+
+  SecurityGroupDEV:
+    Value: !GetAtt ServerSecurityGroupStack.Outputs.EC2GroupIdDEV
+
+  SecurityGroupPDN:
+    Value: !GetAtt ServerSecurityGroupStack.Outputs.EC2GroupIdPDN
+
+  SecurityGroupNameDEV:
+    Value: !Sub LDC-AUTH-SG-${NetworkUser}-DEV
+  
+  SecurityGroupNamePDN:
+    Value: !Sub LDC-AUTH-SG-${NetworkUser}-PDN
+
+  LoadBalancerDEV:
+    Value: !Sub LDC-AUTH-ALB-${NetworkUser}-DEV
+
+  LoadBalancerPDN:
+    Value: !Sub "LDC-AUTH-ALB-${NetworkUser}-PDN"
+
+  EC2NameDEV:
+    Value: !Sub LDC-AUTH-EC2-${NetworkUser}-DEV
+
+  EC2NamePDN:
+    Value: !Sub LDC-AUTH-EC2-${NetworkUser}-PDN

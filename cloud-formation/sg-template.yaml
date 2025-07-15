@@ -1,16 +1,19 @@
 Parameters:
-  ApplicationName:
-    Description: The application name
-    Type: String
   VPCId:
     Description: VPC to create the security group into
     Type: AWS::EC2::VPC::Id
+
+  NetworkUsername:
+    Description: Network username
+    Type: String
+    Default: NTABORD
   
 Resources:
-  ServerSecurityGroup:
+
+  SecurityGroupDEV:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: !Sub Security group for ${ApplicationName}, allow connections from specified CIDR ranges
+      GroupDescription: allow connections from specified CIDR ranges DEV environment
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 80
@@ -29,8 +32,40 @@ Resources:
           ToPort: 22
           CidrIp: 0.0.0.0/0
       VpcId: !Ref VPCId
+      Tags:
+        - Key: Name
+          Value: !Sub LDC-AUTH-SG-${NetworkUsername}-DEV
+
+  SecurityGroupPDN:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: allow connections from specified CIDR ranges PDN environment
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 4200
+          ToPort: 4200
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      VpcId: !Ref VPCId
+      Tags:
+        - Key: Name
+          Value: !Sub LDC-AUTH-SG-${NetworkUsername}-PDN
 
 Outputs:
-  SSHGroupId:
-    Value: !Ref ServerSecurityGroup
-    Description: Id for the SSH Security Group
+  EC2GroupIdDEV:
+    Value: !Ref SecurityGroupDEV
+    Description: Id for the EC2 Security Group DEV
+  EC2GroupIdPDN:
+    Value: !Ref SecurityGroupPDN
+    Description: Id for the EC2 Security Group PDN
